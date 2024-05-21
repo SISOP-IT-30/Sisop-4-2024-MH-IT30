@@ -24,14 +24,14 @@ static const char *base_dir = "/home/purofuro/Fico/M4S3/relics";
 #define S_IFDIR 0040000
 #endif
 
-// Helper function to construct the full file path
+// to make the full file path
 static void construct_full_path(char *destination, const char *relative_path) {
     strcpy(destination, base_dir);
     strncat(destination, relative_path, MAX_BYTES - strlen(destination) - 1);
     printf("The string is %s\n", destination);
 }
 
-// Helper function to get the size of a file part
+// to get the size of a file part
 static size_t get_file_part_size(const char *file_path) {
     FILE *file = fopen(file_path, "rb");
     if (!file) return 0;
@@ -41,7 +41,7 @@ static size_t get_file_part_size(const char *file_path) {
     return size;
 }
 
-// New helper function to get the full list of file parts
+// to get the full list of file parts
 static void get_all_file_parts(const char *base_path, char part_paths[][MAX_BYTES], int *part_count) {
     int index = 0;
     char part_index[5]; // for ".%03d"
@@ -258,7 +258,7 @@ static int my_create(const char *path, mode_t mode, struct fuse_file_info *fi) {
     strcpy(full_path, base_dir);
     strcat(full_path, path);
     char suffix[10];
-    sprintf(suffix, ".%03d", 0);  // Create the suffix ".000"
+    sprintf(suffix, ".%03d", 0);  // to allocate the .000 or .xxx and so on
     strcat(full_path, suffix);
     FILE *file = fopen(full_path, "wb");
     if (!file) return -errno;
