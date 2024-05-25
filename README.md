@@ -1,7 +1,7 @@
-# Sisop-3-2024-MH-IT30
-Praktikum Sistem Operasi Modul 3
+# Sisop-4-2024-MH-IT30
+Praktikum Sistem Operasi Modul 4
 
-## Praktikum [Modul 3](https://github.com/lab-kcks/Modul-Sisop/tree/main/Modul-3)
+## Praktikum [Modul 4](https://github.com/lab-kcks/Modul-Sisop/tree/main/Modul-4)
 
 Mata Kuliah Sistem Operasi
 
