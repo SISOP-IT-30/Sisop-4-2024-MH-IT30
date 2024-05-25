@@ -14,6 +14,58 @@ Dosen pengampu : Ir. Muchammad Husni, M.Kom.
 - [Jody Hezekiah - 5027221050](https://github.com/imnotjs)
 - [Nabiel Nizar Anwari - 5027231087](https://github.com/bielnzar)
 
+# Soal 2
+
+Masih dengan Ini Karya Kita, sang CEO ingin melakukan tes keamanan pada folder sensitif Ini Karya Kita. Karena Teknologi Informasi merupakan departemen dengan salah satu fokus di Cyber Security, maka dia kembali meminta bantuan mahasiswa Teknologi Informasi angkatan 2023 untuk menguji dan mengatur keamanan pada folder sensitif tersebut. Untuk mendapatkan folder sensitif itu, mahasiswa IT 23 harus kembali mengunjungi website Ini Karya Kita pada www.inikaryakita.id/schedule . Silahkan isi semua formnya, tapi pada form subject isi dengan nama kelompok_SISOP24 , ex: IT01_SISOP24 . Lalu untuk form Masukkan Pesanmu, ketik “Mau Foldernya” . Tunggu hingga 1x24 jam, maka folder sensitif tersebut akan dikirimkan melalui email kalian. Apabila folder tidak dikirimkan ke email kalian, maka hubungi sang CEO untuk meminta bantuan.   
+
+**A. Pada folder "pesan" Adfi ingin meningkatkan kemampuan sistemnya dalam mengelola berkas-berkas teks dengan menggunakan fuse.**
+
+- Jika sebuah file memiliki prefix "base64," maka sistem akan langsung mendekode isi file tersebut dengan algoritma Base64.
+- Jika sebuah file memiliki prefix "rot13," maka isi file tersebut akan langsung di-decode dengan algoritma ROT13.
+- Jika sebuah file memiliki prefix "hex," maka isi file tersebut akan langsung di-decode dari representasi heksadesimalnya.
+- Jika sebuah file memiliki prefix "rev," maka isi file tersebut akan langsung di-decode dengan cara membalikkan teksnya.
+
+Pada kode, ada fungsi decrypt_file_content yang akan mendecrypt txt yang berkaitan. Seperti contoh, pada base64 :
+
+```
+if (strstr(filename, "base64") != NULL) {
+            BIO *bio, *b64;
+            bio = BIO_new(BIO_s_mem());
+            b64 = BIO_new(BIO_f_base64());
+            BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+            BIO_push(b64, bio);
+
+            // Write text to be decrypted to the BIO
+            BIO_write(bio, buf, strlen(buf));
+
+            // Create buffer for decrypted text
+            char *decoded_text = (char *)malloc(strlen(buf));
+            memset(decoded_text, 0, strlen(buf));
+
+            // Perform decryption and store result in buffer
+            BIO_read(b64, decoded_text, strlen(buf));
+
+            // Clean up BIO and close
+            BIO_free_all(b64);
+            if (decoded_text != NULL) {
+                strncpy(buf, decoded_text, size);
+                free(decoded_text);
+            }
+```
+
+**B. Pada folder “rahasia-berkas”, Adfi dan timnya memutuskan untuk menerapkan kebijakan khusus. Mereka ingin memastikan bahwa folder dengan prefix "rahasia" tidak dapat diakses tanpa izin khusus.**
+
+Jika seseorang ingin mengakses folder dan file pada “rahasia”, mereka harus memasukkan sebuah password terlebih dahulu (password bebas). **(Belum berhasil implementasi)**
+
+**C. Setiap proses yang dilakukan akan tercatat pada logs-fuse.log dengan format:**
+[SUCCESS/FAILED]::dd/mm/yyyy-hh:mm:ss::[tag]::[information]
+
+Ex:
+[SUCCESS]::01/11/2023-10:43:43::[moveFile]::[File moved successfully]
+
+Changelog :
+- Memperbaiki akses fuse pada file dan folder
+
 ## Soal 3
 3) Seorang arkeolog menemukan sebuah gua yang didalamnya tersimpan banyak relik dari zaman praaksara, sayangnya semua barang yang ada pada gua tersebut memiliki bentuk yang terpecah belah akibat bencana yang tidak diketahui. Sang arkeolog ingin menemukan cara cepat agar ia bisa menggabungkan relik-relik yang terpecah itu, namun karena setiap pecahan relik itu masih memiliki nilai tersendiri, ia memutuskan untuk membuat sebuah file system yang mana saat ia mengakses file system tersebut ia dapat melihat semua relik dalam keadaan utuh, sementara relik yang asli tidak berubah sama sekali.
 Ketentuan :
@@ -31,20 +83,40 @@ a) Buatlah sebuah direktori dengan ketentuan seperti pada tree berikut
 
 Berikut ada gambar tree yang telah disesuaikan dengan yang diinginkan modul:
 
-(gambar)
+![github-small](https://github.com/PuroFuro/image_for_sisop/blob/main/M4S3Photo/Screenshot_20240525_215709.png)
 
 b) Direktori [nama_bebas] adalah direktori FUSE dengan direktori asalnya adalah direktori relics. Ketentuan Direktori [nama_bebas] adalah sebagai berikut :
 Ketika dilakukan listing, isi dari direktori [nama_bebas] adalah semua relic dari relics yang telah tergabung.
 
 - Ketika dilakukan copy (dari direktori [nama_bebas] ke tujuan manapun), file yang disalin adalah file dari direktori relics yang sudah tergabung.
 
+Bentuk awal folder saat dilakukan mounting:
+
+![github-small](https://github.com/PuroFuro/image_for_sisop/blob/main/M4S3Photo/Mount.png)
+
 - Ketika ada file dibuat, maka pada direktori asal (direktori relics) file tersebut akan dipecah menjadi sejumlah pecahan dengan ukuran maksimum tiap pecahan adalah 10kb.
 
 - File yang dipecah akan memiliki nama [namafile].000 dan seterusnya sesuai dengan jumlah pecahannya.
+
 - Ketika dilakukan penghapusan, maka semua pecahannya juga ikut terhapus.
+
+Sebuah gambar ketika dilakukan penghapusan file:
+
+![github-small](https://github.com/PuroFuro/image_for_sisop/blob/main/M4S3Photo/rmR1.png)
+
+Gambar saat dilakukan copy dan remove file tertentu di fuse folder:
+
+![github-small](https://github.com/PuroFuro/image_for_sisop/blob/main/M4S3Photo/cpR.png)
 
 c) Direktori report adalah direktori yang akan dibagikan menggunakan Samba File Server. Setelah kalian berhasil membuat direktori [nama_bebas], jalankan FUSE dan salin semua isi direktori [nama_bebas] pada direktori report.
 
+Gambar saat isi dari fuse folder di-copy ke report:
+
+![github-small](https://github.com/PuroFuro/image_for_sisop/blob/main/M4S3Photo/reportcp.png)
+
+Gambar isi dari folder report yang dilihat dengan perantara samba
+
+![github-small](https://github.com/PuroFuro/image_for_sisop/blob/main/M4S3Photo/samba.png)
 
 d) Catatan:
 - pada contoh terdapat 20 relic, namun pada zip file hanya akan ada 10 relic
