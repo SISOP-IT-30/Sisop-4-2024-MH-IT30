@@ -1,213 +1,340 @@
-#define FUSE_USE_VERSION 31
-
-#include <fuse3/fuse.h>
+#define FUSE_USE_VERSION 28
+#include <fuse.h>
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
 #include <errno.h>
 #include <fcntl.h>
-#include <sys/time.h>
 #include <unistd.h>
+#include <sys/stat.h>
+#include <dirent.h>
+#include <stdlib.h>
 #include <time.h>
+#include <ctype.h>
+#include <libgen.h> // for dirname()
+#include <openssl/bio.h>
 #include <openssl/evp.h>
 
-// Fungsi untuk mencatat log
-void write_log(const char *status, const char *tag, const char *info) {
-    FILE *log_file = fopen("logs-fuse.log", "a");
-    if (log_file == NULL) return;
+static const char *dirpath = "/home/hezekiah/sensitif";
+int password_entered;
 
-    time_t t = time(NULL);
-    struct tm *tm = localtime(&t);
-    char timestamp[100];
-    strftime(timestamp, sizeof(timestamp), "%d/%m/%Y-%H:%M:%S", tm);
+char program_name[1024]; // Store the program name for logging
 
-    fprintf(log_file, "[%s]::%s::[%s]::[%s]\n", status, timestamp, tag, info);
+// Function to create the log file if it doesn't exist
+static void ensure_log_file() {
+    char log_path[512];
+    snprintf(log_path, sizeof(log_path), "%s/logs-fuse.log", program_name);
+    FILE *log_file = fopen(log_path, "a");
+    if (log_file == NULL) {
+        // Log file doesn't exist, create it
+        log_file = fopen(log_path, "w");
+        if (log_file == NULL) {
+            perror("Error creating log file");
+            return;
+        }
+        // Close the newly created log file
+        fclose(log_file);
+    }
+}
+
+// Function to log activities to a log file in the program's directory
+static void logging(const char *activity, const char *path, const char *result) {
+    ensure_log_file(); // Ensure the log file exists
+    char log_path[512];
+    snprintf(log_path, sizeof(log_path), "%s/logs-fuse.log", program_name);
+    FILE *log_file = fopen(log_path, "a");
+    if (log_file == NULL) {
+        perror("Error opening log file");
+        return;
+    }
+
+    // Get the current time
+    time_t now;
+    time(&now);
+    struct tm *local_time = localtime(&now);
+    char timestamp[20];
+    strftime(timestamp, sizeof(timestamp), "%d/%m/%Y-%H:%M:%S", local_time);
+
+    // Write to the log file
+    fprintf(log_file, "[%s]::%s::[%s]::[%s]\n", result, timestamp, activity, path);
+
     fclose(log_file);
 }
 
-// Fungsi untuk decode base64
-char* decode_base64(const char* input) {
-    // Placeholder untuk hasil decoding base64
-    return strdup(input);
+char secret_password[100] = "bebas";
+
+// Function to check and allow access to the "rahasia" folder
+int passtest(const char *path) {
+    printf("Entering passtest function\n"); // Debugging: Print when function is entered
+    if (!password_entered) {
+        printf("Prompting for password\n"); // Debugging: Print when prompting for password
+        char input_password[100];
+        printf("Masukkan kata sandi: ");
+        scanf("%s", input_password);
+        if (strcmp(input_password, secret_password) != 0) {
+            printf("Kata sandi salah. Akses ditolak.\n");
+            logging("DENIED ACCESS", path, "Akses folder rahasia ditolak");
+            return 0;
+        }
+        password_entered = 1;
+        logging("GRANTED ACCESS", path, "Akses folder rahasia diterima");
+        printf("Access granted\n"); // Debugging: Print when access is granted
+    }
+    return 1;
 }
 
-// Fungsi untuk decode rot13
-char* decode_rot13(const char* input) {
-    char *output = strdup(input);
-    for (int i = 0; output[i]; i++) {
-        if ((output[i] >= 'A' && output[i] <= 'Z') || (output[i] >= 'a' && output[i] <= 'z')) {
-            if ((output[i] >= 'A' && output[i] <= 'M') || (output[i] >= 'a' && output[i] <= 'm')) {
-                output[i] += 13;
-            } else {
-                output[i] -= 13;
-            }
+// Implementation of fuse_getattr to get file/directory attributes
+static int getattr_fuse(const char *path, struct stat *stbuf) {
+    int res;
+    char fpath[1000];
+    sprintf(fpath, "%s%s", dirpath, path);
+    res = lstat(fpath, stbuf);
+    if (res == -1)
+        return -errno;
+    return 0;
+}
+
+// Implementation of fuse_readdir to read directory contents
+static int readdir_fuse(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi) {
+    int res;
+    char fpath[1000];
+    if (strcmp(path, "/") == 0) {
+        path = dirpath;
+        sprintf(fpath, "%s", path);
+    } else {
+        sprintf(fpath, "%s%s", dirpath, path);
+    }
+
+    if(strstr(fpath, "rahasia") != NULL){
+        if (!passtest(path)) {
+            return -EACCES;
         }
     }
-    return output;
-}
 
-// Fungsi untuk decode hex
-char* decode_hex(const char* input) {
-    size_t len = strlen(input);
-    char *output = (char*)malloc((len/2) + 1);
-    for (size_t i = 0; i < len; i += 2) {
-        sscanf(input + i, "%2hhx", &output[i/2]);
-    }
-    output[len/2] = '\0';
-    return output;
-}
-
-// Fungsi untuk reverse string
-char* decode_rev(const char* input) {
-    size_t len = strlen(input);
-    char *output = (char*)malloc(len + 1);
-    for (size_t i = 0; i < len; i++) {
-        output[i] = input[len - 1 - i];
-    }
-    output[len] = '\0';
-    return output;
-}
-
-// Fungsi untuk membaca file
-static int fuse_read(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
-    char full_path[1024];
-    snprintf(full_path, sizeof(full_path), ".%s", path);
-
-    int res = 0;
-    int fd = open(full_path, O_RDONLY);
-    if (fd == -1)
-        return -errno;
-
-    res = pread(fd, buf, size, offset);
-    if (res == -1)
-        res = -errno;
-
-    close(fd);
-    return res;
-}
-
-// Fungsi untuk menampilkan isi direktori
-static int fuse_readdir(const char *path, void *buf, fuse_fill_dir_t filler, off_t offset, struct fuse_file_info *fi, enum fuse_readdir_flags flags) {
-    (void) offset;
-    (void) fi;
-    (void) flags;
-
-    DIR *dp;
-    struct dirent *de;
-
-    dp = opendir(".");
+    DIR *dp = opendir(fpath);
     if (dp == NULL)
         return -errno;
-
-    while ((de = readdir(dp)) != NULL) {
+    struct dirent *de;
+    while ((de = readdir(dp)) != NULL){
         struct stat st;
         memset(&st, 0, sizeof(st));
         st.st_ino = de->d_ino;
         st.st_mode = de->d_type << 12;
-        if (filler(buf, de->d_name, &st, 0, 0))
+        res = (filler(buf, de->d_name, &st, 0));
+        if (res != 0)
             break;
     }
-
     closedir(dp);
+    password_entered = 0;
     return 0;
 }
 
-// Fungsi untuk menampilkan informasi file
-static int fuse_getattr(const char *path, struct stat *stbuf, struct fuse_file_info *fi) {
-    (void) fi;
-    int res;
-    res = lstat(path, stbuf);
-    if (res == -1)
-        return -errno;
-    return 0;
-}
-
-// Fungsi untuk membaca file dan mendecode jika memiliki prefix tertentu
-static int fuse_open(const char *path, struct fuse_file_info *fi) {
-    char full_path[1024];
-    snprintf(full_path, sizeof(full_path), ".%s", path);
-
-    int fd = open(full_path, fi->flags);
-    if (fd == -1)
-        return -errno;
-
-    close(fd);
-    return 0;
-}
-
-// Fungsi untuk membaca dan memproses file berdasarkan prefix
-static int fuse_read_file(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
-    char *content = NULL;
-    size_t content_len = 0;
-    char full_path[1024];
-    snprintf(full_path, sizeof(full_path), ".%s", path);
-
-    FILE *f = fopen(full_path, "r");
-    if (!f) return -errno;
-
-    fseek(f, 0, SEEK_END);
-    content_len = ftell(f);
-    fseek(f, 0, SEEK_SET);
-
-    content = malloc(content_len + 1);
-    fread(content, 1, content_len, f);
-    fclose(f);
-    content[content_len] = '\0';
-
-    char *decoded_content = NULL;
-
-    if (strncmp(path + 1, "base64_", 7) == 0) {
-        decoded_content = decode_base64(content);
-    } else if (strncmp(path + 1, "rot13_", 6) == 0) {
-        decoded_content = decode_rot13(content);
-    } else if (strncmp(path + 1, "hex_", 4) == 0) {
-        decoded_content = decode_hex(content);
-    } else if (strncmp(path + 1, "rev_", 4) == 0) {
-        decoded_content = decode_rev(content);
-    } else {
-        decoded_content = strdup(content);
-    }
-
-    free(content);
-
-    if (offset < strlen(decoded_content)) {
-        if (offset + size > strlen(decoded_content))
-            size = strlen(decoded_content) - offset;
-        memcpy(buf, decoded_content + offset, size);
-    } else {
-        size = 0;
-    }
-
-    free(decoded_content);
-
-    write_log("SUCCESS", "readFile", full_path);
-    return size;
-}
-
-// Fungsi untuk membuka direktori dan memeriksa izin akses untuk folder rahasia
-static int fuse_opendir(const char *path, struct fuse_file_info *fi) {
-    if (strncmp(path, "/rahasia", 8) == 0) {
-        char password[256];
-        printf("Masukkan password untuk mengakses folder rahasia: ");
-        scanf("%255s", password);
-        // Password yang diterima, implementasi sederhana, tambahkan logika verifikasi jika perlu
-        if (strcmp(password, "password_bebas") != 0) {
-            write_log("FAILED", "openDir", "Unauthorized access attempt to /rahasia");
+// Implementation of fuse_open to open files
+static int open_fuse(const char *path, struct fuse_file_info *fi) {
+    char fpath[1000];
+    sprintf(fpath, "%s%s", dirpath, path);
+    if(strstr(fpath, "rahasia") != NULL){
+        if (!passtest(path)) {
             return -EACCES;
         }
     }
+    int res = open(fpath, fi->flags);
+    if (res == -1) return -errno;
+    close(res);
     return 0;
 }
 
-// Definisi fungsi-fungsi FUSE
-static struct fuse_operations fuse_example_operations = {
-    .getattr = fuse_getattr,
-    .readdir = fuse_readdir,
-    .open = fuse_open,
-    .read = fuse_read_file,
-    .opendir = fuse_opendir,
+// Implementation of fuse_mkdir to create directories
+static int mkdir_fuse(const char *path, mode_t mode) {
+    char fpath[1000];
+    sprintf(fpath, "%s%s", dirpath, path);
+    int res = mkdir(fpath, mode);
+    if (res == -1) return -errno;
+    logging("MKDIR", path, "Berhasil membuat direktori");
+    return 0;
+}
+
+// Implementation of fuse_rmdir to remove directories
+static int rmdir_fuse(const char *path) {
+    char fpath[1000];
+    sprintf(fpath, "%s%s", dirpath, path);
+    int res = rmdir(fpath);
+    if (res == -1) return -errno;
+    logging("RMDIR", path, "Berhasil menghapus direktori");
+    return 0;
+}
+
+// Implementation of fuse_rename to rename files/directories
+static int rename_fuse(const char *from, const char *to) {
+    char fromPath[1000], toPath[1000];
+    sprintf(fromPath, "%s%s", dirpath, from);
+    sprintf(toPath, "%s%s", dirpath, to);
+    int res = rename(fromPath, toPath);
+    if (res == -1) return -errno;
+    logging("RENAME/MOVE", from, "Berhasil mengganti nama/memindahkan file");
+    return 0;
+}
+
+// Implementation of fuse_create to create files
+static int create_fuse(const char *path, mode_t mode, struct fuse_file_info *fi) {
+    char fpath[1000];
+    sprintf(fpath, "%s%s", dirpath, path);
+    int res = creat(fpath, mode);
+    if (res == -1) return -errno;
+    close(res);
+    logging("CREATE", path, "Berhasil membuat file");
+    return 0;
+}
+
+// Implementation of fuse_unlink to remove files
+static int rm_fuse(const char *path) {
+    char fpath[1000];
+    sprintf(fpath, "%s%s", dirpath, path);
+    int res = unlink(fpath);
+    if (res == -1) return -errno;
+    logging("REMOVE", path, "Berhasil menghapus file");
+    return 0;
+}
+
+// Implementation of fuse_chmod to change file/directory permissions
+static int chmod_fuse(const char *path, mode_t mode) {
+    char fpath[1000];
+    sprintf(fpath, "%s%s", dirpath, path);
+    int res = chmod(fpath, mode);
+    if (res == -1) return -errno;
+    logging("CHMOD", path, "Berhasil mengubah mode akses file/direktori");
+    return 0;
+}
+
+// Decrypt file content
+static void decrypt_file_content(const char *path, char *buf, size_t size) {
+    char *filename = strrchr(path, '/');
+    if (filename != NULL) {
+        filename++;
+        if (strstr(filename, "base64") != NULL) {
+            BIO *bio, *b64;
+            bio = BIO_new(BIO_s_mem());
+            b64 = BIO_new(BIO_f_base64());
+            BIO_set_flags(b64, BIO_FLAGS_BASE64_NO_NL);
+            BIO_push(b64, bio);
+
+            // Write text to be decrypted to the BIO
+            BIO_write(bio, buf, strlen(buf));
+
+            // Create buffer for decrypted text
+            char *decoded_text = (char *)malloc(strlen(buf));
+            memset(decoded_text, 0, strlen(buf));
+
+            // Perform decryption and store result in buffer
+            BIO_read(b64, decoded_text, strlen(buf));
+
+            // Clean up BIO and close
+            BIO_free_all(b64);
+            if (decoded_text != NULL) {
+                strncpy(buf, decoded_text, size);
+                free(decoded_text);
+            }
+        } else if (strstr(filename, "rot13") != NULL ) {
+            // Decrypt ROT13
+            for (int i = 0; i < size; i++) {
+                if (isalpha(buf[i])) {
+                    if (islower(buf[i])) {
+                        buf[i] = 'a' + (buf[i] - 'a' + 13) % 26;
+                    } else {
+                        buf[i] = 'A' + (buf[i] - 'A' + 13) % 26;
+                    }
+                }
+            }
+        } else if (strstr(filename, "hex") != NULL) {
+            // Decrypt Hexadecimal
+            size_t decoded_size = size / 2;
+            char *decoded_text = (char *)malloc(decoded_size);
+            memset(decoded_text, 0, decoded_size);
+
+            for (int i = 0, j = 0; i < size; i += 2, j++) {
+                char hex[3] = {buf[i], buf[i + 1], '\0'};
+                decoded_text[j] = strtol(hex, NULL, 16);
+            }
+
+            strncpy(buf, decoded_text, size);
+            free(decoded_text);
+        }
+    }
+}
+
+// Read file content
+static int read_fuse(const char *path, char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+    char fpath[1000];
+    if (strcmp(path, "/") == 0) {
+        path = dirpath;
+        sprintf(fpath, "%s", path);
+    } else {
+        sprintf(fpath, "%s%s", dirpath, path);
+    }
+    if(strstr(fpath, "rahasia") != NULL){
+        if (!passtest(path)) {
+            return -EACCES;
+        }
+    }
+
+    int res = 0;
+    int fd = open(fpath, O_RDONLY);
+    if (fd == -1) return -errno;
+    res = pread(fd, buf, size, offset);
+    if (res == -1) res = -errno;
+    close(fd);
+
+    decrypt_file_content(path, buf, size);
+
+    logging("READ", path, "Berhasil membaca file");
+    return res;
+}
+
+// Write file content
+static int write_fuse(const char *path, const char *buf, size_t size, off_t offset, struct fuse_file_info *fi) {
+    char fpath[1000];
+    if (strcmp(path, "/") == 0) {
+        path = dirpath;
+        sprintf(fpath, "%s", path);
+    } else {
+        sprintf(fpath, "%s%s", dirpath, path);
+    }
+    if(strstr(fpath, "rahasia") != NULL){
+        if (!passtest(path)) {
+            return -EACCES;
+        }
+    }
+
+    int fd;
+    int res;
+    (void) fi;
+    fd = open(fpath, O_WRONLY);
+    if (fd == -1) return -errno;
+
+    res = pwrite(fd, buf, size, offset);
+    if (res == -1) res = -errno;
+
+    close(fd);
+
+    logging("WRITE", path, "Berhasil menulis file");
+    return res;
+}
+
+// FUSE operations struct
+static struct fuse_operations operations_fuse = {
+    .getattr = getattr_fuse,
+    .readdir = readdir_fuse,
+    .open = open_fuse,
+    .mkdir = mkdir_fuse,
+    .rmdir = rmdir_fuse,
+    .rename = rename_fuse,
+    .create = create_fuse,
+    .unlink = rm_fuse,
+    .chmod = chmod_fuse,
+    .read = read_fuse,
+    .write = write_fuse,
 };
 
 int main(int argc, char *argv[]) {
-    return fuse_main(argc, argv, &fuse_example_operations, NULL);
+    strncpy(program_name, argv[0], sizeof(program_name) - 1);
+    return fuse_main(argc, argv, &operations_fuse, NULL);
 }
