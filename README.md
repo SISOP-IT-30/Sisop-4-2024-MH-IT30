@@ -630,6 +630,9 @@ int main(int argc, char *argv[]) {
     umask(0);
     return fuse_main(argc, argv, &operations, NULL);
 }
-```
 
+```
 Seperti yang sudah dijelaskan di modul, `fuse_operations` berguna untuk menginisiasikan fungsi-fungsi yang telah dibuat dan int main meng return `fuse_operations` tersebut.
+
+
+### Sekian laporan resmi kami pada modul kali ini, Terimakasih :)
