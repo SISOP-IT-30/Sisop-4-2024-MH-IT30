@@ -14,6 +14,154 @@ Dosen pengampu : Ir. Muchammad Husni, M.Kom.
 - [Jody Hezekiah - 5027221050](https://github.com/imnotjs)
 - [Nabiel Nizar Anwari - 5027231087](https://github.com/bielnzar)
 
+
+## [SOAL 1](https://docs.google.com/document/d/1FiZ2st9-NW_Cs_7SfTUrMIW1H_91txG0rX9TeW9H_kE/edit)
+
+Portofolio project fotonya yang bisa didownload dan diakses [di www.inikaryakita.id](https://drive.google.com/file/d/1VP6o84AQfY6QbghFGkw6ghxkBbv7fpum/view)
+
+Pada folder “gallery”:
+
+Membuat folder dengan prefix "wm." Dalam folder ini, setiap gambar yang dipindahkan ke dalamnya akan diberikan watermark bertuliskan inikaryakita.id. 
+
+Ex: `mv ikk.jpeg wm-foto/`
+
+Pada code kami, soal ini sudah terjawab, kami menggunakan : 
+
+- **Watermark Image**: Jika file dipindahkan atau diubah namanya menjadi berekstensi ".wm", maka akan ditambahkan watermark "inikaryakita.id" pada bagian bawah gambar menggunakan ImageMagick.
+
+pada code kami di bagian : 
+```
+static int this_rename(const char *from, const char *to){
+    char sp[1024], dest[1024];
+    sprintf(sp, "%s%s", dp, from);
+    sprintf(dest, "%s%s", dp, to);
+
+    if (strstr(dest, "/wm") != NULL) {
+        int src_fd = open(sp, O_RDONLY);
+        if (src_fd == -1) {
+            perror("Error: Gagal membuka berkas sumber untuk dibaca.");
+            return -errno;
+        }
+        int dest_fd = open(dest, O_WRONLY | O_CREAT | O_TRUNC, 0644);
+        if (dest_fd == -1) {
+            perror("Error: Gagal membuka berkas tujuan untuk ditulis.");
+            close(src_fd);
+            return -errno;
+        }
+
+        char watermark_text[] = "inikaryakita.id";
+        char command[2048];
+        sprintf(command, "convert -gravity south -geometry +0+20 /proc/%d/fd/%d -fill white -pointsize 36 -annotate +0+0 '%s' /proc/%d/fd/%d", getpid(), src_fd, watermark_text, getpid(), dest_fd);
+
+        int res = system(command);
+        if (res == -1) {
+            perror("Error: Gagal menjalankan perintah ImageMagick.");
+            close(src_fd);
+            close(dest_fd);
+            return -errno;
+        }
+
+        close(src_fd);
+        close(dest_fd);
+
+        if (unlink(sp) == -1) {
+            perror("Error: Gagal menghapus berkas sumber.");
+            return -errno;
+        }
+    } else {
+        int res = rename(sp, dest);
+        if (res == -1) {
+            perror("Error: Gagal memindahkan berkas.");
+            return -errno;
+        }
+    }
+    return 0;
+}
+```
+
+Ketika fungsi this_rename dipanggil dan path tujuan (variabel dest) mengandung "/wm", maka kode akan melakukan proses penambahan watermark pada file menggunakan ImageMagick. Berikut adalah penjelasan langkah-langkahnya:
+
+Membuka file sumber (src_fd) dalam mode read-only.
+Membuka file tujuan (dest_fd) dalam mode write-only, create jika belum ada, dan truncate jika sudah ada.
+Mendefinisikan teks watermark yang akan ditambahkan, dalam kasus ini adalah "inikaryakita.id".
+Membangun perintah ImageMagick convert dalam variabel command. Perintah ini akan membaca dari file sumber (/proc/%d/fd/%d yang merupakan representasi file descriptor dalam /proc), menambahkan watermark dengan opsi-opsi seperti:
+
+- `gravity south`: Menempatkan watermark di bagian bawah gambar.
+
+- `geometry +0+20` : Mengatur posisi watermark 20 piksel dari bawah gambar.
+
+- `fill white` : Mengatur warna teks watermark menjadi putih.
+
+- `pointsize 36` : Mengatur ukuran font menjadi 36 poin.
+
+- `annotate +0+0 '%s'`: Menambahkan teks watermark (%s akan diganti dengan watermark_text).
+
+Memanggil perintah ImageMagick yang telah dibuat dengan system(command).
+Menutup file sumber dan file tujuan.
+Menghapus file sumber dengan unlink(sp).
+
+Jika path tujuan tidak mengandung "/wm", maka kode hanya akan melakukan operasi rename biasa tanpa penambahan watermark.
+Jadi, ImageMagick digunakan untuk menambahkan watermark pada file gambar yang dipindahkan atau diubah namanya menjadi berekstensi ".wm". Proses ini dilakukan dengan membuat perintah ImageMagick secara dinamis dan memanggil perintah tersebut menggunakan system().
+
+hasilnya sebagai berikut : 
+
+![github-small](https://github.com/bielnzar/sisop/blob/main/Modul4/1.png)
+
+![github-small](https://github.com/bielnzar/sisop/blob/main/Modul4/2.png)
+
+gambar menunjukkan semua file .jpeg .jpg yang dimasukkan ke folder ber prefix "wm" dalam kasus ini dicontohkan "wm-foto" akan mendapat watermark "inikaryakita.id".
+### Soal berikutnya :
+
+Pada folder "bahaya" terdapat file bernama "script.sh." Adfi menyadari pentingnya menjaga keamanan dan integritas data dalam folder ini. 
+Mereka harus mengubah permission pada file "script.sh" agar bisa dijalankan, karena jika dijalankan maka dapat menghapus semua dan isi dari  "gallery"
+Adfi dan timnya juga ingin menambahkan fitur baru dengan membuat file dengan prefix "test" yang ketika disimpan akan mengalami pembalikan (reverse) isi dari file tersebut.  
+
+Untuk menjawab soal tersebut, kami menggunakan
+
+**Reverse Content** : Yaitu jika nama file atau direktori diawali dengan "test", maka isi file tersebut akan dibalik saat dibaca atau ditulis.
+
+### Alur Reverse Isi File
+
+Fitur reverse isi file digunakan ketika nama file atau direktori diawali dengan kata "test". Proses reverse isi file dilakukan saat membaca (`this_read`) atau menulis (`this_write`) file yang memenuhi syarat tersebut. Berikut adalah alur yang terjadi:
+
+1. Saat akan membaca atau menulis file, fungsi `this_test_prefix` akan dipanggil untuk memeriksa apakah nama file atau direktori diawali dengan "test".
+
+2. Jika nama file atau direktori diawali dengan "test", maka fungsi `this_reverse_content` akan dipanggil untuk membalik isi file.
+
+3. Fungsi `this_reverse_content` bekerja dengan melakukan swap antara karakter pertama dan terakhir, kemudian karakter kedua dan kedua terakhir, dan seterusnya hingga setengah panjang string. Algoritma ini secara efektif membalik urutan karakter dalam string.
+
+4. Dalam kasus membaca file (`this_read`):
+   - File dibuka dalam mode read-only.
+   - Isi file dibaca ke dalam buffer (`buf`) menggunakan `pread`.
+   - Jika nama file diawali dengan "test", maka isi buffer (`buf`) akan dibalik dengan memanggil `this_reverse_content`.
+   - Isi buffer yang telah dibalik akan dikembalikan kepada pengguna sebagai hasil pembacaan file.
+
+5. Dalam kasus menulis file (`this_write`):
+   - File dibuka dalam mode write-only.
+   - Membuat salinan buffer (`mod_buf`) dari isi yang akan ditulis (`buf`) menggunakan `malloc` dan `memcpy`.
+   - Jika nama file diawali dengan "test", maka isi `mod_buf` akan dibalik dengan memanggil `this_reverse_content`.
+   - Isi `mod_buf` yang telah dibalik akan ditulis ke file menggunakan `pwrite`.
+   - Buffer salinan (`mod_buf`) akan dibebaskan menggunakan `free`.
+
+Dengan demikian, fitur reverse isi file akan secara otomatis membalik isi file saat dibaca atau ditulis, jika nama file atau direktori diawali dengan "test". Hal ini dapat berguna dalam berbagai skenario, seperti proteksi data atau pengolahan data khusus.
+
+Hasilnya seperti ini :
+
+![github-small](https://github.com/bielnzar/sisop/blob/main/Modul4/3.png)
+
+Semua file yang berawalan "test" maka akan direverse isinya, contoh dalam gambar ada "test-adfi.txt" yang sebelumnya terbalik isinya, pada saat folder di mount fuse, langsung bisa membalikkan isinya. tetapi tidak untuk file" selain yang berawalan "test", bisa dilihat sama seperti semula, dan tidak terbalik.
+#### Pada ubah permission
+
+Kami telah menambahkan fungsi chmod untuk mengubah permission file dkk. agar bisa menjalankan file script.sh sesuai soal yang diberikan.
+
+Berikut hasilnya :
+
+![github-small](https://github.com/bielnzar/sisop/blob/main/Modul4/4.png)
+
+Gambar menunjukkan bahwasanyya file `script.sh` telah berhasil diubah permissioonya dan bisa dijalankan untuk menghapus semua isi dari folder portofolio.
+
+Kesimpulannya, pada soal 1 kali ini, semua pertanyaan telah terjawab dengan baik, code telah menjalankan tugasnya dengan maksimal, dan tidak terjadi error maupun bruteforce. Terimakasih.
+
 # Soal 2
 
 Masih dengan Ini Karya Kita, sang CEO ingin melakukan tes keamanan pada folder sensitif Ini Karya Kita. Karena Teknologi Informasi merupakan departemen dengan salah satu fokus di Cyber Security, maka dia kembali meminta bantuan mahasiswa Teknologi Informasi angkatan 2023 untuk menguji dan mengatur keamanan pada folder sensitif tersebut. Untuk mendapatkan folder sensitif itu, mahasiswa IT 23 harus kembali mengunjungi website Ini Karya Kita pada www.inikaryakita.id/schedule . Silahkan isi semua formnya, tapi pada form subject isi dengan nama kelompok_SISOP24 , ex: IT01_SISOP24 . Lalu untuk form Masukkan Pesanmu, ketik “Mau Foldernya” . Tunggu hingga 1x24 jam, maka folder sensitif tersebut akan dikirimkan melalui email kalian. Apabila folder tidak dikirimkan ke email kalian, maka hubungi sang CEO untuk meminta bantuan.   
